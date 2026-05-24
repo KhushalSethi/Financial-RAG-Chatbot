@@ -23,12 +23,14 @@ class EmbeddingProvider(ABC):
         return self.embed_texts([text])[0]
 
 
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+
+
 class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
         cache_dir = Path(".cache/huggingface").resolve()
         cache_dir.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("HF_HOME", str(cache_dir))
-        os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_dir / "transformers"))
 
         from sentence_transformers import SentenceTransformer
 
@@ -84,7 +86,8 @@ def _tokens(text: str) -> Iterable[str]:
 
 
 def get_default_embedding_provider() -> EmbeddingProvider:
+    model_name = os.getenv("FINRAG_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
     try:
-        return SentenceTransformerEmbeddingProvider()
+        return SentenceTransformerEmbeddingProvider(model_name=model_name)
     except Exception:
         return HashingEmbeddingProvider()

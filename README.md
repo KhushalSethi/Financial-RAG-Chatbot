@@ -10,6 +10,9 @@ For the full project guide, architecture notes, run guide, testing workflow, tro
 - Extract text with `pypdf`.
 - Split documents into overlapping chunks with LangChain text splitters.
 - Build a FAISS vector index with sentence-transformer embeddings.
+- Use stronger configurable BGE embeddings by default.
+- Optionally rerank retrieved candidates before answering.
+- Inspect retrieval scores, top-k chunks, and indexed chunks in the UI.
 - Ask semantic questions over uploaded documents.
 - Answer from retrieved context only, with filename and chunk citations.
 - View conversation history in the sidebar.
@@ -26,7 +29,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The default local embedding model is `sentence-transformers/all-MiniLM-L6-v2`. It may download on first run. If that model cannot load, the app falls back to a deterministic local embedding provider so the UI can still run in degraded mode.
+The default local embedding model is `BAAI/bge-base-en-v1.5`. It may download on first run. If that model cannot load, the app falls back to a deterministic local embedding provider so the UI can still run in degraded mode.
+
+Optional model overrides:
+
+```bash
+export FINRAG_EMBEDDING_MODEL="intfloat/e5-large-v2"
+export FINRAG_RERANKER_MODEL="BAAI/bge-reranker-base"
+```
 
 For OpenAI-generated answers:
 
@@ -42,7 +52,7 @@ OpenAI mode is optional. Local mode remains the default.
 streamlit run app.py
 ```
 
-Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions.
+Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Keep **Rerank candidates** enabled for better retrieval quality.
 
 ## Tests
 
@@ -61,12 +71,15 @@ rag/
   chunking.py
   embeddings.py
   retriever.py
+  reranker.py
   qa.py
   utils.py
 tests/
 requirements.txt
 README.md
 ```
+
+See [CHALLENGES.md](CHALLENGES.md) for the main implementation challenges and how they were handled.
 
 ## Notes
 

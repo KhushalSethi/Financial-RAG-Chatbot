@@ -29,7 +29,10 @@ The project includes:
 - PDF text extraction with `pypdf`
 - Empty, scanned, and encrypted PDF error handling
 - Text chunking with overlap using LangChain text splitters
-- Local sentence-transformer embeddings by default
+- Stronger configurable BGE sentence-transformer embeddings by default
+- Optional cross-encoder reranking
+- Retrieval debug UI with score visualization
+- Searchable chunk inspector
 - Deterministic fallback embeddings for degraded offline/test mode
 - FAISS vector search when `faiss-cpu` is installed
 - Numpy similarity search fallback when FAISS is unavailable
@@ -49,8 +52,9 @@ The project includes:
 | UI | Streamlit |
 | PDF extraction | pypdf |
 | Chunking | langchain-text-splitters |
-| Embeddings | sentence-transformers |
+| Embeddings | sentence-transformers, default `BAAI/bge-base-en-v1.5` |
 | Vector search | FAISS, with numpy fallback |
+| Reranking | sentence-transformers CrossEncoder, default `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | Optional LLM answers | OpenAI Python SDK |
 | Tables/UI metadata | pandas |
 | Tests | pytest |
@@ -72,6 +76,7 @@ The application targets Python 3.10 or newer.
 │   ├── embeddings.py
 │   ├── ingest.py
 │   ├── qa.py
+│   ├── reranker.py
 │   ├── retriever.py
 │   └── utils.py
 └── tests/
@@ -135,9 +140,40 @@ Important classes:
 - `SentenceTransformerEmbeddingProvider`
 - `HashingEmbeddingProvider`
 
-`SentenceTransformerEmbeddingProvider` uses `sentence-transformers/all-MiniLM-L6-v2` by default.
+`SentenceTransformerEmbeddingProvider` uses `BAAI/bge-base-en-v1.5` by default. This is stronger than the original MiniLM model and generally improves semantic retrieval quality for business and financial text.
+
+Override the embedding model with:
+
+```bash
+export FINRAG_EMBEDDING_MODEL="intfloat/e5-large-v2"
+```
 
 `HashingEmbeddingProvider` is a deterministic fallback. It is useful for tests and degraded operation when the sentence-transformer model cannot load.
+
+### `rag/reranker.py`
+
+Responsible for second-stage reranking.
+
+Important classes and functions:
+
+- `CrossEncoderReranker`
+- `NoOpReranker`
+- `get_default_reranker()`
+- `rerank_retrieved_chunks(...)`
+
+The app first retrieves a larger candidate pool using vector similarity. If reranking is enabled, the cross-encoder scores each query/chunk pair and returns the strongest final chunks.
+
+The default reranker is small enough for local demos:
+
+```text
+cross-encoder/ms-marco-MiniLM-L-6-v2
+```
+
+Override it with a stronger model:
+
+```bash
+export FINRAG_RERANKER_MODEL="BAAI/bge-reranker-base"
+```
 
 ### `rag/retriever.py`
 
@@ -200,9 +236,10 @@ The app follows this retrieval-augmented generation flow:
 6. `rag.retriever` stores embeddings and chunk metadata in a vector index.
 7. The user asks a question.
 8. The question is embedded with the same embedding provider.
-9. The vector index retrieves the top matching chunks.
-10. `rag.qa` answers using only those retrieved chunks.
-11. The answer includes citations like `annual_report.pdf - chunk 4`.
+9. The vector index retrieves a larger candidate pool.
+10. If enabled, the reranker reorders candidates by query-specific relevance.
+11. `rag.qa` answers using only the final retrieved chunks.
+12. The answer includes citations like `annual_report.pdf - chunk 4`.
 
 ## 7. Why Chunking Matters
 
@@ -232,6 +269,16 @@ Sources: annual_report.pdf - chunk 2; annual_report.pdf - chunk 5
 ```
 
 This lets the user inspect the source chunks in the UI and verify where the answer came from.
+
+## 8.1 Retrieval Debugging
+
+The Streamlit app includes retrieval debugging tools:
+
+- A bar chart of final top-k scores
+- A table with rank, score, filename, chunk number, citation, and preview
+- A chunk inspector that lets users search indexed chunks and open chunk text
+
+These tools make it easier to diagnose whether a bad answer came from retrieval, reranking, or answer generation.
 
 ## 9. Answer Modes
 
@@ -340,13 +387,19 @@ On Windows PowerShell:
 pip install -r requirements.txt
 ```
 
-The first run may download the default sentence-transformer model:
+The first run may download the default sentence-transformer embedding model:
 
 ```text
-sentence-transformers/all-MiniLM-L6-v2
+BAAI/bge-base-en-v1.5
 ```
 
-That download can take a little time depending on network speed.
+The reranker may also download on first use:
+
+```text
+cross-encoder/ms-marco-MiniLM-L-6-v2
+```
+
+These downloads can take time depending on network speed.
 
 ## 12. Run Guide
 
@@ -387,7 +440,7 @@ pytest
 Expected output:
 
 ```text
-5 passed
+11 passed
 ```
 
 The test suite covers:
@@ -397,6 +450,8 @@ The test suite covers:
 - Chunk creation
 - Invalid chunk overlap validation
 - Retrieval ranking with deterministic embeddings
+- Reranking behavior with a fake reranker
+- Document identity and overview question handling
 
 The tests intentionally use lightweight fake PDF reader objects and deterministic embeddings so they are stable and fast.
 
@@ -411,6 +466,8 @@ Use this checklist after making changes:
 - Asking a question before indexing shows a helpful warning
 - Asking a question after indexing returns an answer with citations
 - Retrieved context expander shows chunk text
+- Retrieval debug chart and top-k details update after a question
+- Chunk inspector can search and open indexed chunks
 - Document summary works after indexing
 - `Reset all` clears indexed documents and conversation history
 - `local` mode works without `OPENAI_API_KEY`
@@ -453,9 +510,19 @@ streamlit run app.py
 
 ### Sentence-transformer model download is slow
 
-The default embedding model may download on first run. After it is cached locally, future runs are faster.
+The default embedding model may download on first run. After it is cached under `.cache/huggingface`, future runs are faster.
 
 If the model cannot load, the app falls back to `HashingEmbeddingProvider`. That fallback keeps the app usable but retrieval quality will be lower.
+
+### Reranker download is slow
+
+The default reranker may download on first use. For higher quality, use a stronger reranker:
+
+```bash
+export FINRAG_RERANKER_MODEL="BAAI/bge-reranker-base"
+```
+
+If the reranker cannot load, the app falls back to vector similarity ordering and shows a warning.
 
 ### FAISS installation issues
 
@@ -569,6 +636,7 @@ Financial-specific enhancements could include:
 - Summarizing risk factors
 - Detecting revenue, margin, debt, and cash-flow sections
 - Table extraction with `pdfplumber`
+- Section-aware and table-aware chunking
 
 ## 19. Development Notes
 
@@ -670,4 +738,3 @@ If the answer is not supported by retrieved context, the app should say:
 ```text
 I could not find enough support for that answer in the uploaded documents.
 ```
-
