@@ -158,10 +158,12 @@ def summarize_chunks(
         question = "Summarize the uploaded financial documents using only the provided context."
         answer = _answer_with_openai(question, retrieved_chunks, model=openai_model)
     else:
-        sentences = []
-        for item in retrieved_chunks:
-            sentences.extend(_sentences(item.chunk.text)[:2])
-        answer = " ".join(sentences[:8]).strip() or NOT_FOUND
+        answer = _answer_overview_locally(retrieved_chunks)
+        if answer == NOT_FOUND:
+            sentences = []
+            for item in retrieved_chunks:
+                sentences.extend(_sentences(item.chunk.text)[:2])
+            answer = _bullet_list(sentences[:5]) or NOT_FOUND
     citations = _citations(retrieved_chunks)
     return QAResponse(answer=f"{answer}\n\nSources: " + "; ".join(citations), citations=citations, retrieved_chunks=retrieved_chunks)
 
@@ -221,13 +223,13 @@ def _answer_locally(question: str, retrieved_chunks: list[RetrievedChunk]) -> st
         normalized = _normalize_for_dedupe(sentence)
         if normalized and normalized not in seen:
             seen.add(normalized)
-            unique.append(f"- {sentence} ({citation})")
+            unique.append(_clean_answer_sentence(sentence))
         if len(unique) == 3:
             break
 
     if not unique:
         return NOT_FOUND
-    return "Relevant evidence found:\n" + "\n".join(unique)
+    return "Relevant evidence found:\n" + _bullet_list(unique)
 
 
 def _answer_identity_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
@@ -243,7 +245,7 @@ def _answer_identity_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
 
     candidates.sort(key=lambda value: value[0], reverse=True)
     _, company_name, citation = candidates[0]
-    return f"This document appears to be about {company_name}. ({citation})"
+    return f"This document appears to be about {company_name}."
 
 
 def _answer_overview_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
@@ -258,9 +260,9 @@ def _answer_overview_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
     parts = []
     if company:
         company_name, citation = company
-        parts.append(f"The document appears to be about {company_name}. ({citation})")
+        parts.append(f"The document appears to be about {company_name}.")
     if evidence:
-        parts.append("It mainly discusses:\n" + "\n".join(evidence))
+        parts.append("It mainly discusses:\n" + _bullet_list(evidence))
     return "\n\n".join(parts)
 
 
@@ -317,7 +319,7 @@ def _overview_evidence(retrieved_chunks: list[RetrievedChunk]) -> list[str]:
         normalized = _normalize_for_dedupe(sentence)
         if normalized and normalized not in seen:
             seen.add(normalized)
-            evidence.append(f"- {sentence} ({citation})")
+            evidence.append(_clean_answer_sentence(sentence))
         if len(evidence) == 4:
             break
     return evidence
@@ -426,9 +428,30 @@ def _normalize_for_dedupe(text: str) -> str:
 
 
 def _sentences(text: str) -> list[str]:
-    compact = re.sub(r"\s+", " ", text).strip()
+    compact = _clean_answer_sentence(text)
     parts = re.split(r"(?<=[.!?])\s+", compact)
     return [part.strip() for part in parts if len(part.strip()) > 20]
+
+
+def _clean_answer_sentence(text: str) -> str:
+    text = re.sub(r"\[page \d+\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b\d+\s*\|\s*P\s*a\s*g\s*e\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bPage\s+\d+\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text)
+    text = text.strip(" -|")
+    return text
+
+
+def _bullet_list(items: list[str]) -> str:
+    cleaned = []
+    seen = set()
+    for item in items:
+        item = _clean_answer_sentence(item)
+        normalized = _normalize_for_dedupe(item)
+        if item and normalized and normalized not in seen:
+            seen.add(normalized)
+            cleaned.append(f"- {item}")
+    return "\n".join(cleaned)
 
 
 def _format_context(retrieved_chunks: list[RetrievedChunk]) -> str:

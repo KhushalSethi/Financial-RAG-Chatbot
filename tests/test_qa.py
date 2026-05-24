@@ -25,7 +25,7 @@ def test_document_identity_question_extracts_company_name():
     response = answer_question("Which company is this document about?", chunks, mode="local")
 
     assert "Asian Paints Limited" in response.answer
-    assert "AP_Synopsis_revised_2023-24.pdf - chunk 1" in response.answer
+    assert "Sources: AP_Synopsis_revised_2023-24.pdf - chunk 1" in response.answer
 
 
 def test_detects_document_identity_question():
@@ -66,3 +66,22 @@ def test_document_overview_question_uses_opening_context():
     assert "Asian Paints Limited" in response.answer
     assert "business performance" in response.answer
     assert "Limited Assurance Conclusion" not in response.answer
+
+
+def test_local_answer_cleans_page_markers_and_inline_citations():
+    chunks = [
+        RetrievedChunk(
+            chunk=Chunk(
+                text="[Page 13] 13 | P a g e Breaking the mystery- Working capital can be defined as capital that keeps the business working.",
+                filename="Decoding-Financial-Jargons.pdf",
+                chunk_number=36,
+            ),
+            score=1.0,
+        )
+    ]
+
+    response = answer_question("What is working capital?", chunks, mode="local")
+
+    assert "[Page 13]" not in response.answer
+    assert "13 | P a g e" not in response.answer
+    assert response.answer.count("Sources:") == 1

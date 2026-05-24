@@ -57,6 +57,7 @@ def reset_state() -> None:
     st.session_state.pop("chunks", None)
     st.session_state.pop("index_key", None)
     st.session_state.pop("messages", None)
+    st.session_state.pop("last_retrieval", None)
     if INDEX_DIR.exists():
         shutil.rmtree(INDEX_DIR)
     st.cache_resource.clear()
@@ -66,7 +67,6 @@ def initialize_state() -> None:
     st.session_state.setdefault("documents", [])
     st.session_state.setdefault("chunks", [])
     st.session_state.setdefault("messages", [])
-    st.session_state.setdefault("last_retrieval", [])
 
 
 def render_sidebar() -> tuple[str, int, int, bool]:
@@ -175,13 +175,13 @@ def main() -> None:
         if st.button("Generate summary", use_container_width=True, disabled=not st.session_state.chunks):
             index = current_index()
             retrieved = index.search("financial performance revenue profit expenses cash flow risks outlook", k=min(8, len(st.session_state.chunks)))
+            retrieved = with_opening_chunks(retrieved)
             try:
                 summary = summarize_chunks(retrieved, mode=mode)
                 st.write(summary.answer)
             except MissingAPIKeyError as exc:
                 st.error(str(exc))
 
-        render_retrieval_debug()
         render_chunk_inspector()
 
     with left:
@@ -209,16 +209,10 @@ def main() -> None:
                         retrieved = rerank_retrieved_chunks(question, retrieved, reranker_provider(), top_k=top_k)
                     else:
                         retrieved = retrieved[:top_k]
-                    st.session_state.last_retrieval = retrieval_rows(retrieved)
                     try:
                         response = answer_question(question, retrieved, mode=mode)
                         response_text = response.answer
                         st.write(response_text)
-                        if response.retrieved_chunks:
-                            with st.expander("Retrieved context"):
-                                for item in response.retrieved_chunks:
-                                    st.markdown(f"**{item.chunk.citation}** - score `{item.score:.3f}`")
-                                    st.write(item.chunk.text)
                     except MissingAPIKeyError as exc:
                         response_text = str(exc)
                         st.error(response_text)
@@ -251,34 +245,6 @@ def with_opening_chunks(retrieved: list[RetrievedChunk]) -> list[RetrievedChunk]
             seen.add(item.chunk.citation)
             combined.append(item)
     return combined
-
-
-def retrieval_rows(retrieved: list[RetrievedChunk]) -> list[dict[str, object]]:
-    return [
-        {
-            "rank": rank,
-            "score": round(item.score, 4),
-            "filename": item.chunk.filename,
-            "chunk": item.chunk.chunk_number,
-            "citation": item.chunk.citation,
-            "preview": item.chunk.text[:180].replace("\n", " "),
-        }
-        for rank, item in enumerate(retrieved, start=1)
-    ]
-
-
-def render_retrieval_debug() -> None:
-    st.subheader("Retrieval Debug")
-    rows = st.session_state.get("last_retrieval", [])
-    if not rows:
-        st.caption("Ask a question to see retrieved chunks and scores.")
-        return
-
-    debug_df = pd.DataFrame(rows)
-    chart_df = debug_df[["citation", "score"]].set_index("citation")
-    st.bar_chart(chart_df, height=220)
-    with st.expander("Top-k details"):
-        st.dataframe(debug_df, hide_index=True, use_container_width=True)
 
 
 def render_chunk_inspector() -> None:

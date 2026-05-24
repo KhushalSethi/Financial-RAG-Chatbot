@@ -12,7 +12,7 @@ For the full project guide, architecture notes, run guide, testing workflow, tro
 - Build a FAISS vector index with sentence-transformer embeddings.
 - Use stronger configurable BGE embeddings by default.
 - Optionally rerank retrieved candidates before answering.
-- Inspect retrieval scores, top-k chunks, and indexed chunks in the UI.
+- Search and inspect indexed chunks in the UI.
 - Ask semantic questions over uploaded documents.
 - Answer from retrieved context only, with filename and chunk citations.
 - View conversation history in the sidebar.
@@ -52,7 +52,7 @@ OpenAI mode is optional. Local mode remains the default.
 streamlit run app.py
 ```
 
-Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Use the retrieval debug panel to compare vector results with reranking; reranking is optional because it can help some questions and hurt others.
+Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Reranking is optional because it can help some questions and hurt others.
 
 ## Tests
 

@@ -31,7 +31,6 @@ The project includes:
 - Text chunking with overlap using LangChain text splitters
 - Stronger configurable BGE sentence-transformer embeddings by default
 - Optional cross-encoder reranking
-- Retrieval debug UI with score visualization
 - Searchable chunk inspector
 - Deterministic fallback embeddings for degraded offline/test mode
 - FAISS vector search when `faiss-cpu` is installed
@@ -270,15 +269,15 @@ Sources: annual_report.pdf - chunk 2; annual_report.pdf - chunk 5
 
 This lets the user inspect the source chunks in the UI and verify where the answer came from.
 
-## 8.1 Retrieval Debugging
+## 8.1 Chunk Inspection
 
-The Streamlit app includes retrieval debugging tools:
+The Streamlit app includes a searchable chunk inspector:
 
-- A bar chart of final top-k scores
-- A table with rank, score, filename, chunk number, citation, and preview
-- A chunk inspector that lets users search indexed chunks and open chunk text
+- Search indexed chunks by keyword or filename
+- Open individual chunks and inspect their full text
+- Check source citations shown in answers against stored chunks
 
-These tools make it easier to diagnose whether a bad answer came from retrieval, reranking, or answer generation. Compare results with reranking off and on before deciding which mode works better for a document set.
+The earlier retrieval debug chart was removed to keep the UI simpler and make answers easier to read.
 
 ## 9. Answer Modes
 
@@ -425,7 +424,7 @@ Open that URL in your browser.
 4. Wait for the success message showing document and chunk counts.
 5. Ask a question in the chat input.
 6. Read the answer and citations.
-7. Expand `Retrieved context` to inspect source chunks.
+7. Use the chunk inspector to search source chunks when needed.
 8. Use `Generate summary` to summarize indexed content.
 9. Use `Reset all` to clear chat and index state.
 
@@ -465,8 +464,6 @@ Use this checklist after making changes:
 - Uploading a scanned/image-only PDF shows the OCR message
 - Asking a question before indexing shows a helpful warning
 - Asking a question after indexing returns an answer with citations
-- Retrieved context expander shows chunk text
-- Retrieval debug chart and top-k details update after a question
 - Chunk inspector can search and open indexed chunks
 - Document summary works after indexing
 - `Reset all` clears indexed documents and conversation history

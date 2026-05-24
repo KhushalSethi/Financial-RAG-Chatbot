@@ -38,9 +38,9 @@ Solution: Cached indexes store the embedding provider identifier, and cache path
 
 ## 7. Hard-To-Debug Bad Answers
 
-Challenge: Without seeing retrieved chunks, it is hard to know whether the answer failed because of retrieval, reranking, or answer generation.
+Challenge: Without seeing chunks, it is hard to verify whether the answer is grounded in the uploaded document.
 
-Solution: Added retrieval debug UI with score visualization, top-k details, and a searchable chunk inspector.
+Solution: Added a searchable chunk inspector. A previous retrieval debug chart was removed because it made the UI noisier and did not help ordinary users read answers.
 
 ## 8. Local-First vs Answer Quality
 
