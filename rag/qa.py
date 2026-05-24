@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 from rag.utils import MissingAPIKeyError, RetrievedChunk
 
@@ -94,6 +95,8 @@ def answer_question(
         answer = _answer_with_openai(question, retrieved_chunks, model=openai_model)
     elif is_document_identity_question(question):
         answer = _answer_identity_locally(retrieved_chunks)
+    elif is_document_overview_question(question):
+        answer = _answer_overview_locally(retrieved_chunks)
     else:
         answer = _answer_locally(question, retrieved_chunks)
 
@@ -111,8 +114,6 @@ def is_document_identity_question(question: str) -> bool:
         "company is this",
         "company is the document",
         "company is this document",
-        "document about",
-        "report about",
         "whose report",
         "which organisation",
         "what organisation",
@@ -120,6 +121,30 @@ def is_document_identity_question(question: str) -> bool:
         "what organization",
     )
     return any(phrase in normalized for phrase in identity_phrases)
+
+
+def is_document_overview_question(question: str) -> bool:
+    normalized = re.sub(r"\s+", " ", question.lower()).strip()
+    overview_phrases = (
+        "what is the document talking about",
+        "what is this document talking about",
+        "what does the document talk about",
+        "what does this document talk about",
+        "what is the document about",
+        "what is this document about",
+        "what is the report about",
+        "what is this report about",
+        "document about",
+        "report about",
+        "summarize the document",
+        "summarise the document",
+        "summarize this document",
+        "summarise this document",
+        "give me an overview",
+        "document overview",
+        "report overview",
+    )
+    return any(phrase in normalized for phrase in overview_phrases)
 
 
 def summarize_chunks(
@@ -219,6 +244,95 @@ def _answer_identity_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
     candidates.sort(key=lambda value: value[0], reverse=True)
     _, company_name, citation = candidates[0]
     return f"This document appears to be about {company_name}. ({citation})"
+
+
+def _answer_overview_locally(retrieved_chunks: list[RetrievedChunk]) -> str:
+    if not retrieved_chunks:
+        return NOT_FOUND
+
+    company = _best_company_candidate(retrieved_chunks)
+    evidence = _overview_evidence(retrieved_chunks)
+    if not company and not evidence:
+        return NOT_FOUND
+
+    parts = []
+    if company:
+        company_name, citation = company
+        parts.append(f"The document appears to be about {company_name}. ({citation})")
+    if evidence:
+        parts.append("It mainly discusses:\n" + "\n".join(evidence))
+    return "\n\n".join(parts)
+
+
+def _best_company_candidate(retrieved_chunks: list[RetrievedChunk]) -> Optional[tuple[str, str]]:
+    candidates: list[tuple[float, str, str]] = []
+    for item in retrieved_chunks:
+        early_chunk_bonus = max(0.0, 3.0 - item.chunk.chunk_number * 0.25)
+        for name in _company_name_candidates(item.chunk.text):
+            score = early_chunk_bonus + item.score + _company_name_score(name)
+            candidates.append((score, name, item.chunk.citation))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda value: value[0], reverse=True)
+    _, name, citation = candidates[0]
+    return name, citation
+
+
+def _overview_evidence(retrieved_chunks: list[RetrievedChunk]) -> list[str]:
+    candidates: list[tuple[float, str, str]] = []
+    overview_terms = {
+        "annual",
+        "report",
+        "business",
+        "financial",
+        "sustainability",
+        "performance",
+        "revenue",
+        "profit",
+        "operations",
+        "governance",
+        "risk",
+        "strategy",
+        "management",
+        "responsibility",
+        "environment",
+        "social",
+        "shareholders",
+    }
+    for item in retrieved_chunks:
+        early_chunk_bonus = max(0.0, 2.5 - item.chunk.chunk_number * 0.2)
+        for sentence in _sentences(item.chunk.text):
+            normalized = _normalize_for_dedupe(sentence)
+            if _is_low_value_overview_sentence(normalized):
+                continue
+            terms = _terms(sentence)
+            score = len(terms & overview_terms) + early_chunk_bonus + item.score
+            if score >= 1.0:
+                candidates.append((score, sentence, item.chunk.citation))
+
+    candidates.sort(key=lambda value: value[0], reverse=True)
+    evidence = []
+    seen = set()
+    for _, sentence, citation in candidates:
+        normalized = _normalize_for_dedupe(sentence)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            evidence.append(f"- {sentence} ({citation})")
+        if len(evidence) == 4:
+            break
+    return evidence
+
+
+def _is_low_value_overview_sentence(normalized: str) -> bool:
+    low_value_phrases = (
+        "limited assurance conclusion",
+        "nothing has come to our attention",
+        "procedures performed",
+        "made enquiries",
+        "appendix",
+        "criteria",
+    )
+    return any(phrase in normalized for phrase in low_value_phrases)
 
 
 def _company_name_candidates(text: str) -> list[str]:

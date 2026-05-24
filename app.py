@@ -9,7 +9,13 @@ import streamlit as st
 from rag.chunking import split_documents
 from rag.embeddings import get_default_embedding_provider
 from rag.ingest import extract_text_from_pdf_file
-from rag.qa import MissingAPIKeyError, answer_question, is_document_identity_question, summarize_chunks
+from rag.qa import (
+    MissingAPIKeyError,
+    answer_question,
+    is_document_identity_question,
+    is_document_overview_question,
+    summarize_chunks,
+)
 from rag.retriever import VectorIndex
 from rag.utils import EmptyPDFError, RetrievedChunk, short_hash
 
@@ -184,7 +190,7 @@ def main() -> None:
                 else:
                     index = current_index()
                     retrieved = index.search(question, k=top_k)
-                    if is_document_identity_question(question):
+                    if is_document_identity_question(question) or is_document_overview_question(question):
                         retrieved = with_opening_chunks(retrieved)
                     try:
                         response = answer_question(question, retrieved, mode=mode)
