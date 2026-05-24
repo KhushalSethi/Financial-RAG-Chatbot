@@ -9,9 +9,9 @@ import streamlit as st
 from rag.chunking import split_documents
 from rag.embeddings import get_default_embedding_provider
 from rag.ingest import extract_text_from_pdf_file
-from rag.qa import MissingAPIKeyError, answer_question, summarize_chunks
+from rag.qa import MissingAPIKeyError, answer_question, is_document_identity_question, summarize_chunks
 from rag.retriever import VectorIndex
-from rag.utils import EmptyPDFError, short_hash
+from rag.utils import EmptyPDFError, RetrievedChunk, short_hash
 
 
 INDEX_DIR = Path(".cache/vector_index")
@@ -184,6 +184,8 @@ def main() -> None:
                 else:
                     index = current_index()
                     retrieved = index.search(question, k=top_k)
+                    if is_document_identity_question(question):
+                        retrieved = with_opening_chunks(retrieved)
                     try:
                         response = answer_question(question, retrieved, mode=mode)
                         response_text = response.answer
@@ -205,6 +207,26 @@ def current_index() -> VectorIndex:
     if not key or not chunks:
         return VectorIndex(embedding_provider())
     return build_index_cached(key, chunks)
+
+
+def with_opening_chunks(retrieved: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    combined: list[RetrievedChunk] = []
+    seen = set()
+    per_file_counts: dict[str, int] = {}
+    for chunk in st.session_state.get("chunks", []):
+        count = per_file_counts.get(chunk.filename, 0)
+        if count >= 4:
+            continue
+        per_file_counts[chunk.filename] = count + 1
+        if chunk.citation not in seen:
+            seen.add(chunk.citation)
+            combined.append(RetrievedChunk(chunk=chunk, score=1.0))
+
+    for item in retrieved:
+        if item.chunk.citation not in seen:
+            seen.add(item.chunk.citation)
+            combined.append(item)
+    return combined
 
 
 if __name__ == "__main__":
