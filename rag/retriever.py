@@ -59,7 +59,11 @@ class VectorIndex:
 
     def save(self, directory: Union[str, Path]) -> None:
         directory = ensure_directory(directory)
-        payload = {"chunks": self.chunks, "vectors": self.vectors}
+        payload = {
+            "chunks": self.chunks,
+            "vectors": self.vectors,
+            "embedding_provider": self.embedding_provider.identifier,
+        }
         with (directory / "index.pkl").open("wb") as handle:
             pickle.dump(payload, handle)
 
@@ -68,6 +72,11 @@ class VectorIndex:
         path = Path(directory) / "index.pkl"
         with path.open("rb") as handle:
             payload = pickle.load(handle)
+        cached_provider = payload.get("embedding_provider")
+        if cached_provider and cached_provider != embedding_provider.identifier:
+            raise ValueError(
+                f"Cached index was built with {cached_provider}, not {embedding_provider.identifier}."
+            )
         return cls(
             embedding_provider=embedding_provider,
             chunks=payload["chunks"],

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 
 
 class EmbeddingProvider(ABC):
+    @property
+    @abstractmethod
+    def identifier(self) -> str:
+        """Stable name used to validate cached vector indexes."""
+
     @abstractmethod
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         """Return a 2D float32 embedding matrix."""
@@ -18,10 +25,19 @@ class EmbeddingProvider(ABC):
 
 class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+        cache_dir = Path(".cache/huggingface").resolve()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("HF_HOME", str(cache_dir))
+        os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_dir / "transformers"))
+
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.model = SentenceTransformer(model_name, cache_folder=str(cache_dir / "sentence-transformers"))
+
+    @property
+    def identifier(self) -> str:
+        return f"sentence-transformers:{self.model_name}"
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         embeddings = self.model.encode(
@@ -37,6 +53,10 @@ class HashingEmbeddingProvider(EmbeddingProvider):
 
     def __init__(self, dimensions: int = 384) -> None:
         self.dimensions = dimensions
+
+    @property
+    def identifier(self) -> str:
+        return f"hashing:{self.dimensions}"
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         vectors = np.zeros((len(texts), self.dimensions), dtype="float32")

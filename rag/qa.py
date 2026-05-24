@@ -16,6 +16,41 @@ class QAResponse:
 
 NOT_FOUND = "I could not find enough support for that answer in the uploaded documents."
 
+STOPWORDS = {
+    "about",
+    "after",
+    "also",
+    "and",
+    "are",
+    "can",
+    "did",
+    "does",
+    "for",
+    "from",
+    "has",
+    "have",
+    "how",
+    "into",
+    "its",
+    "more",
+    "not",
+    "our",
+    "the",
+    "their",
+    "this",
+    "that",
+    "was",
+    "were",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+    "year",
+}
+
 
 def answer_question(
     question: str,
@@ -84,18 +119,22 @@ def _answer_with_openai(question: str, retrieved_chunks: list[RetrievedChunk], m
 
 
 def _answer_locally(question: str, retrieved_chunks: list[RetrievedChunk]) -> str:
-    query_terms = {
-        term
-        for term in re.findall(r"[a-zA-Z0-9$%]+", question.lower())
-        if len(term) > 2
-    }
-    candidate_sentences: list[tuple[int, str]] = []
-    for item in retrieved_chunks:
+    useful_chunks = _filter_weak_matches(retrieved_chunks)
+    if not useful_chunks:
+        return NOT_FOUND
+
+    query_terms = _terms(question)
+    if not query_terms:
+        return NOT_FOUND
+
+    candidate_sentences: list[tuple[float, str, str]] = []
+    for item in useful_chunks:
         for sentence in _sentences(item.chunk.text):
-            sentence_terms = set(re.findall(r"[a-zA-Z0-9$%]+", sentence.lower()))
+            sentence_terms = _terms(sentence)
             overlap = len(query_terms & sentence_terms)
             if overlap:
-                candidate_sentences.append((overlap, sentence))
+                number_bonus = 0.5 if re.search(r"[$%]|\b\d[\d,.]*\b", sentence) else 0.0
+                candidate_sentences.append((overlap + number_bonus + item.score, sentence, item.chunk.citation))
 
     if not candidate_sentences:
         return NOT_FOUND
@@ -103,14 +142,41 @@ def _answer_locally(question: str, retrieved_chunks: list[RetrievedChunk]) -> st
     candidate_sentences.sort(key=lambda value: value[0], reverse=True)
     unique: list[str] = []
     seen = set()
-    for _, sentence in candidate_sentences:
-        normalized = sentence.lower()
-        if normalized not in seen:
+    for _, sentence, citation in candidate_sentences:
+        normalized = _normalize_for_dedupe(sentence)
+        if normalized and normalized not in seen:
             seen.add(normalized)
-            unique.append(sentence)
-        if len(unique) == 4:
+            unique.append(f"- {sentence} ({citation})")
+        if len(unique) == 3:
             break
-    return " ".join(unique)
+
+    if not unique:
+        return NOT_FOUND
+    return "Relevant evidence found:\n" + "\n".join(unique)
+
+
+def _filter_weak_matches(retrieved_chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    if not retrieved_chunks:
+        return []
+    best_score = max(item.score for item in retrieved_chunks)
+    if best_score < 0.08:
+        return []
+    cutoff = max(0.08, best_score * 0.45)
+    return [item for item in retrieved_chunks if item.score >= cutoff]
+
+
+def _terms(text: str) -> set[str]:
+    return {
+        term
+        for term in re.findall(r"[a-zA-Z0-9$%]+", text.lower())
+        if len(term) > 2 and term not in STOPWORDS
+    }
+
+
+def _normalize_for_dedupe(text: str) -> str:
+    text = re.sub(r"\[page \d+\]", "", text.lower())
+    text = re.sub(r"[^a-z0-9$%]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _sentences(text: str) -> list[str]:
@@ -134,4 +200,3 @@ def _citations(retrieved_chunks: list[RetrievedChunk]) -> list[str]:
             seen.add(citation)
             citations.append(citation)
     return citations
-

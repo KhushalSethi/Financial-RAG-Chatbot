@@ -28,10 +28,13 @@ def embedding_provider():
 @st.cache_resource(show_spinner=False)
 def build_index_cached(cache_key: str, _chunks_tuple: tuple) -> VectorIndex:
     chunks = list(_chunks_tuple)
-    index_path = INDEX_DIR / cache_key
     provider = embedding_provider()
+    index_path = INDEX_DIR / provider.identifier.replace("/", "_").replace(":", "_") / cache_key
     if (index_path / "index.pkl").exists():
-        return VectorIndex.load(index_path, provider)
+        try:
+            return VectorIndex.load(index_path, provider)
+        except ValueError:
+            shutil.rmtree(index_path)
     index = VectorIndex.from_chunks(chunks, provider)
     index.save(index_path)
     return index
@@ -63,6 +66,11 @@ def render_sidebar() -> tuple[str, int]:
         )
         mode = st.radio("Answer mode", ["local", "openai"], horizontal=True)
         top_k = st.slider("Retrieved chunks", min_value=2, max_value=10, value=5)
+        provider = embedding_provider()
+        if provider.identifier.startswith("hashing"):
+            st.warning("Using fallback embeddings. Install sentence-transformers for better retrieval quality.")
+        else:
+            st.caption(f"Embeddings: {provider.identifier}")
 
         col_a, col_b = st.columns(2)
         with col_a:
