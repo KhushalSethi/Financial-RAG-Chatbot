@@ -16,7 +16,7 @@ Solution: The default embedding model was upgraded to `BAAI/bge-base-en-v1.5`, w
 
 Challenge: Vector similarity can rank plausible but wrong chunks highly, especially in financial reports with repeated boilerplate.
 
-Solution: Added optional cross-encoder reranking in `rag/reranker.py`. The app retrieves a larger candidate pool, reranks candidates, and only passes the final top-k chunks to the answer step.
+Solution: Added optional cross-encoder reranking in `rag/reranker.py`. The app retrieves a larger candidate pool, reranks candidates, and only passes the final top-k chunks to the answer step. Reranking is opt-in because cross-encoders can improve some questions and degrade others on specialized documents.
 
 ## 4. Broad Questions Need Opening Context
 

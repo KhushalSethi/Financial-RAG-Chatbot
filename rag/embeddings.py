@@ -39,15 +39,45 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
 
     @property
     def identifier(self) -> str:
-        return f"sentence-transformers:{self.model_name}"
+        return f"sentence-transformers:{self.model_name}:{self._prompt_strategy}"
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
+        prepared_texts = [self._format_passage(text) for text in texts]
         embeddings = self.model.encode(
-            texts,
+            prepared_texts,
             normalize_embeddings=True,
             show_progress_bar=False,
         )
         return np.asarray(embeddings, dtype="float32")
+
+    def embed_query(self, text: str) -> np.ndarray:
+        embeddings = self.model.encode(
+            [self._format_query(text)],
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return np.asarray(embeddings, dtype="float32")[0]
+
+    def _format_query(self, text: str) -> str:
+        if self._prompt_strategy == "bge":
+            return f"Represent this sentence for searching relevant passages: {text}"
+        if self._prompt_strategy == "e5":
+            return f"query: {text}"
+        return text
+
+    def _format_passage(self, text: str) -> str:
+        if self._prompt_strategy == "e5":
+            return f"passage: {text}"
+        return text
+
+    @property
+    def _prompt_strategy(self) -> str:
+        model_name = self.model_name.lower()
+        if "bge-" in model_name:
+            return "bge"
+        if "e5-" in model_name:
+            return "e5"
+        return "plain"
 
 
 class HashingEmbeddingProvider(EmbeddingProvider):

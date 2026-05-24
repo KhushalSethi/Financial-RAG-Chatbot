@@ -52,7 +52,7 @@ OpenAI mode is optional. Local mode remains the default.
 streamlit run app.py
 ```
 
-Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Keep **Rerank candidates** enabled for better retrieval quality.
+Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Use the retrieval debug panel to compare vector results with reranking; reranking is optional because it can help some questions and hurt others.
 
 ## Tests
 

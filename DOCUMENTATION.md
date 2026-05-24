@@ -161,7 +161,7 @@ Important classes and functions:
 - `get_default_reranker()`
 - `rerank_retrieved_chunks(...)`
 
-The app first retrieves a larger candidate pool using vector similarity. If reranking is enabled, the cross-encoder scores each query/chunk pair and returns the strongest final chunks.
+The app first retrieves a larger candidate pool using vector similarity. If reranking is enabled, the cross-encoder scores each query/chunk pair and returns the strongest final chunks. Reranking is off by default because it can improve some queries and degrade others, especially with domain-specific financial PDFs.
 
 The default reranker is small enough for local demos:
 
@@ -278,7 +278,7 @@ The Streamlit app includes retrieval debugging tools:
 - A table with rank, score, filename, chunk number, citation, and preview
 - A chunk inspector that lets users search indexed chunks and open chunk text
 
-These tools make it easier to diagnose whether a bad answer came from retrieval, reranking, or answer generation.
+These tools make it easier to diagnose whether a bad answer came from retrieval, reranking, or answer generation. Compare results with reranking off and on before deciding which mode works better for a document set.
 
 ## 9. Answer Modes
 

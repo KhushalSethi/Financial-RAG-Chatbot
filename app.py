@@ -80,7 +80,7 @@ def render_sidebar() -> tuple[str, int, int, bool]:
         mode = st.radio("Answer mode", ["local", "openai"], horizontal=True)
         top_k = st.slider("Final chunks", min_value=2, max_value=10, value=5)
         candidate_k = st.slider("Candidate pool", min_value=5, max_value=30, value=max(15, top_k * 3))
-        use_reranking = st.checkbox("Rerank candidates", value=True)
+        use_reranking = st.checkbox("Rerank candidates", value=False)
         provider = embedding_provider()
         if provider.identifier.startswith("hashing"):
             st.warning("Using fallback embeddings. Install sentence-transformers for better retrieval quality.")
