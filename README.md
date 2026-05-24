@@ -1,12 +1,13 @@
 # Financial RAG Chatbot
 
-A local-first Streamlit app for asking questions over uploaded financial PDFs. The app extracts PDF text, chunks it, embeds it, stores it in a vector index, retrieves relevant chunks, and answers with source citations.
+A local-first Streamlit app for asking questions over uploaded financial PDFs and public website URLs. The app extracts source text, chunks it, embeds it, stores it in a vector index, retrieves relevant chunks, and answers with source citations.
 
 For the full project guide, architecture notes, run guide, testing workflow, troubleshooting, and extension ideas, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
 ## Features
 
 - Upload one or more PDFs through Streamlit.
+- Add public website URLs for static HTML pages or PDF links.
 - Extract text with `pypdf`.
 - Split documents into overlapping chunks with LangChain text splitters.
 - Build a FAISS vector index with sentence-transformer embeddings.
@@ -52,7 +53,7 @@ OpenAI mode is optional. Local mode remains the default.
 streamlit run app.py
 ```
 
-Then open the local URL shown by Streamlit, upload PDFs, click **Index PDFs**, and ask questions. Reranking is optional because it can help some questions and hurt others.
+Then open the local URL shown by Streamlit, upload PDFs or enter website URLs, click **Index sources**, and ask questions. Reranking is optional because it can help some questions and hurt others.
 
 ## Tests
 
@@ -83,4 +84,4 @@ See [CHALLENGES.md](CHALLENGES.md) for the main implementation challenges and ho
 
 ## Notes
 
-Scanned PDFs usually contain page images rather than embedded text. This app reports those files as requiring OCR before indexing.
+Scanned PDFs usually contain page images rather than embedded text. This app reports those files as requiring OCR before indexing. Website URL ingestion works best for public static pages; pages that require JavaScript rendering, login access, or paywall access may not provide readable text.

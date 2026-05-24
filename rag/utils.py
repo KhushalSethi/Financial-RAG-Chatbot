@@ -15,6 +15,10 @@ class EmptyPDFError(RAGError):
     """Raised when a PDF has no extractable text."""
 
 
+class WebpageIngestionError(RAGError):
+    """Raised when a webpage cannot provide useful text."""
+
+
 class MissingAPIKeyError(RAGError):
     """Raised when an LLM provider needs an API key that is not configured."""
 

@@ -4,7 +4,7 @@ This document explains the Financial RAG Chatbot project end to end: what it doe
 
 ## 1. Project Overview
 
-The Financial RAG Chatbot is a local-first document Q&A application. A user uploads one or more PDF files, the app extracts text from those PDFs, splits the text into overlapping chunks, embeds those chunks, stores them in a vector index, retrieves the most relevant chunks for a user question, and answers using only that retrieved context.
+The Financial RAG Chatbot is a local-first document Q&A application. A user uploads one or more PDF files or enters public website URLs, the app extracts source text, splits the text into overlapping chunks, embeds those chunks, stores them in a vector index, retrieves the most relevant chunks for a user question, and answers using only that retrieved context.
 
 The main goal is grounded question answering. The chatbot should not answer from general knowledge. If the uploaded documents do not contain enough information, the answer should say that clearly.
 
@@ -17,8 +17,10 @@ The app is designed for financial documents such as:
 - Audit reports
 - Earnings transcripts
 - Internal finance memos
+- Investor relations webpages
+- Public financial report pages
 
-It can work with any text-based PDF, but scanned or image-only PDFs require OCR before indexing.
+It can work with any text-based PDF and public static webpage. Scanned or image-only PDFs require OCR before indexing. Webpages that require JavaScript rendering, login access, or paywall access may not provide readable text.
 
 ## 2. Feature Summary
 
@@ -26,8 +28,10 @@ The project includes:
 
 - Streamlit web UI
 - PDF upload support
+- Public website URL support for static HTML pages and direct PDF links
 - PDF text extraction with `pypdf`
 - Empty, scanned, and encrypted PDF error handling
+- Basic webpage text extraction with script, style, navigation, footer, and form content ignored
 - Text chunking with overlap using LangChain text splitters
 - Stronger configurable BGE sentence-transformer embeddings by default
 - Optional cross-encoder reranking
@@ -36,7 +40,7 @@ The project includes:
 - FAISS vector search when `faiss-cpu` is installed
 - Numpy similarity search fallback when FAISS is unavailable
 - Cached vector indexes under `.cache/vector_index`
-- Semantic search over uploaded PDFs
+- Semantic search over uploaded PDFs and website URLs
 - Context-only answer generation
 - Citations with source filename and chunk number
 - Conversation history panel
@@ -50,6 +54,7 @@ The project includes:
 | --- | --- |
 | UI | Streamlit |
 | PDF extraction | pypdf |
+| Website fetching/parsing | Python standard library `urllib` and `html.parser` |
 | Chunking | langchain-text-splitters |
 | Embeddings | sentence-transformers, default `BAAI/bge-base-en-v1.5` |
 | Vector search | FAISS, with numpy fallback |
@@ -92,7 +97,8 @@ The Streamlit entry point. It handles:
 
 - Page layout and sidebar controls
 - PDF upload UI
-- Indexing button
+- Website URL input UI
+- Source indexing button
 - Reset button
 - Conversation display
 - Chat input
@@ -104,14 +110,17 @@ It delegates RAG-specific work to the `rag/` package.
 
 ### `rag/ingest.py`
 
-Responsible for reading PDFs and extracting text.
+Responsible for reading PDFs and website URLs and extracting text.
 
 Important functions:
 
 - `extract_text_from_pdf_file(file_obj, filename=None)`
 - `extract_text_from_pdf_path(path)`
+- `extract_text_from_url(url, timeout=15)`
 
 It raises `EmptyPDFError` when a PDF cannot provide useful text. This includes scanned, image-only, encrypted, corrupted, or otherwise unreadable PDFs.
+
+It raises `WebpageIngestionError` when a URL is invalid, cannot be fetched, is too large, or does not contain readable static text. URL ingestion supports public HTML pages and direct PDF links. It does not run browser JavaScript.
 
 ### `rag/chunking.py`
 
@@ -221,15 +230,16 @@ Important exceptions:
 
 - `RAGError`
 - `EmptyPDFError`
+- `WebpageIngestionError`
 - `MissingAPIKeyError`
 
 ## 6. RAG Pipeline
 
 The app follows this retrieval-augmented generation flow:
 
-1. The user uploads one or more PDFs in Streamlit.
-2. `rag.ingest` extracts text from each PDF.
-3. Empty or scanned PDFs are rejected with a helpful OCR message.
+1. The user uploads one or more PDFs or enters one or more website URLs in Streamlit.
+2. `rag.ingest` extracts text from each PDF, HTML page, or direct PDF URL.
+3. Empty or scanned PDFs are rejected with a helpful OCR message, and unreadable webpages are rejected with a URL-specific error.
 4. `rag.chunking` splits extracted text into overlapping chunks.
 5. `rag.embeddings` embeds each chunk.
 6. `rag.retriever` stores embeddings and chunk metadata in a vector index.
@@ -323,7 +333,7 @@ The vector index is cached in two ways:
 1. Streamlit resource caching through `@st.cache_resource`
 2. Disk persistence under `.cache/vector_index`
 
-The index key is built from the uploaded document filenames and text content. If the same documents are indexed again, the app can reuse the saved vector index instead of rebuilding it unnecessarily.
+The index key is built from the indexed source filenames and text content. If the same sources are indexed again, the app can reuse the saved vector index instead of rebuilding it unnecessarily.
 
 The reset button clears:
 
@@ -419,8 +429,8 @@ Open that URL in your browser.
 ### Basic User Flow
 
 1. Open the app.
-2. Upload one or more PDFs in the sidebar.
-3. Click `Index PDFs`.
+2. Upload one or more PDFs in the sidebar, enter one or more website URLs, or do both.
+3. Click `Index sources`.
 4. Wait for the success message showing document and chunk counts.
 5. Ask a question in the chat input.
 6. Read the answer and citations.
@@ -439,13 +449,15 @@ pytest
 Expected output:
 
 ```text
-11 passed
+15 passed
 ```
 
 The test suite covers:
 
 - PDF extraction behavior
 - Empty/scanned PDF handling
+- Website URL text extraction
+- Invalid URL handling
 - Chunk creation
 - Invalid chunk overlap validation
 - Retrieval ranking with deterministic embeddings
@@ -459,9 +471,11 @@ The tests intentionally use lightweight fake PDF reader objects and deterministi
 Use this checklist after making changes:
 
 - App starts with `streamlit run app.py`
-- Uploading no files and clicking `Index PDFs` shows a warning
+- Uploading no files, entering no URLs, and clicking `Index sources` shows a warning
 - Uploading a valid text PDF creates chunks
 - Uploading a scanned/image-only PDF shows the OCR message
+- Entering a public static webpage URL creates chunks
+- Entering an invalid URL shows a helpful URL error
 - Asking a question before indexing shows a helpful warning
 - Asking a question after indexing returns an answer with citations
 - Chunk inspector can search and open indexed chunks
@@ -541,6 +555,10 @@ The PDF is probably scanned or image-only. Run OCR before uploading it. Tools th
 
 After OCR, the PDF should contain selectable text and can be indexed.
 
+### Website URL has no readable text
+
+The page may require JavaScript rendering, login access, paywall access, or may block automated requests. Try a direct PDF link, a static investor relations page, or a page that exposes readable text in the initial HTML response.
+
 ### OpenAI mode says the API key is missing
 
 Set the environment variable before launching Streamlit:
@@ -559,7 +577,9 @@ streamlit run app.py
 
 ## 16. Security and Privacy Notes
 
-By default, local mode does not send document text to an external LLM API. Uploaded PDF content is processed on the machine running Streamlit.
+By default, local mode does not send indexed source text to an external LLM API. Uploaded PDF content and fetched webpage text are processed on the machine running Streamlit.
+
+Website URL ingestion fetches the entered URL from the machine running Streamlit. Do not enter private or sensitive URLs unless that network request is acceptable.
 
 OpenAI mode sends retrieved chunks and the user question to the OpenAI API. Use OpenAI mode only if that is acceptable for the documents being processed.
 
@@ -574,6 +594,7 @@ Do not commit cached indexes if the source documents are confidential. The inclu
 ## 17. Current Limitations
 
 - No OCR is performed inside the app.
+- Website ingestion supports static HTML and direct PDF links only; it does not render JavaScript.
 - Local answer mode is extractive and simple.
 - Chunk citations reference chunk numbers, not exact PDF page ranges.
 - The app is intended for local/single-user use, not hardened multi-user deployment.
@@ -648,6 +669,7 @@ The implementation intentionally favors simple, readable code:
 When modifying the project, keep the boundaries clear:
 
 - Put PDF parsing in `rag/ingest.py`
+- Put website URL parsing in `rag/ingest.py`
 - Put chunking logic in `rag/chunking.py`
 - Put embedding providers in `rag/embeddings.py`
 - Put indexing and retrieval in `rag/retriever.py`
@@ -709,19 +731,20 @@ rm -rf .cache/vector_index
 After starting Streamlit, the app should show:
 
 - A sidebar with PDF upload controls
+- A sidebar with website URL input
 - Answer mode selector
 - Retrieved chunks slider
-- `Index PDFs` button
+- `Index sources` button
 - `Reset all` button
 - Conversation history area
 - Main chat area
 - Document summary panel
 - Source chunk panel
 
-After indexing a valid PDF, the UI should show a success message similar to:
+After indexing a valid PDF or website URL, the UI should show a success message similar to:
 
 ```text
-Indexed 1 document(s) into 12 chunks.
+Indexed 1 source(s) into 12 chunks.
 ```
 
 After asking a grounded question, an answer should include:

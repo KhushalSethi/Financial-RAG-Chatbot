@@ -8,7 +8,7 @@ import streamlit as st
 
 from rag.chunking import split_documents
 from rag.embeddings import get_default_embedding_provider
-from rag.ingest import extract_text_from_pdf_file
+from rag.ingest import extract_text_from_pdf_file, extract_text_from_url
 from rag.qa import (
     MissingAPIKeyError,
     answer_question,
@@ -19,6 +19,7 @@ from rag.qa import (
 from rag.reranker import get_default_reranker, rerank_retrieved_chunks
 from rag.retriever import VectorIndex
 from rag.utils import EmptyPDFError, RetrievedChunk, short_hash
+from rag.utils import WebpageIngestionError
 
 
 INDEX_DIR = Path(".cache/vector_index")
@@ -77,6 +78,11 @@ def render_sidebar() -> tuple[str, int, int, bool]:
             type=["pdf"],
             accept_multiple_files=True,
         )
+        url_text = st.text_area(
+            "Website URLs",
+            placeholder="https://example.com/annual-report\nhttps://example.com/investors",
+            height=90,
+        )
         mode = st.radio("Answer mode", ["local", "openai"], horizontal=True)
         top_k = st.slider("Final chunks", min_value=2, max_value=10, value=5)
         candidate_k = st.slider("Candidate pool", min_value=5, max_value=30, value=max(15, top_k * 3))
@@ -95,14 +101,14 @@ def render_sidebar() -> tuple[str, int, int, bool]:
 
         col_a, col_b = st.columns(2)
         with col_a:
-            process_clicked = st.button("Index PDFs", use_container_width=True)
+            process_clicked = st.button("Index sources", use_container_width=True)
         with col_b:
             if st.button("Reset all", use_container_width=True):
                 reset_state()
                 st.rerun()
 
         if process_clicked:
-            process_uploads(uploaded_files)
+            process_sources(uploaded_files, url_text)
 
         st.divider()
         st.subheader("Conversation")
@@ -115,17 +121,23 @@ def render_sidebar() -> tuple[str, int, int, bool]:
     return mode, top_k, max(candidate_k, top_k), use_reranking
 
 
-def process_uploads(uploaded_files) -> None:
-    if not uploaded_files:
-        st.warning("Upload at least one PDF before indexing.")
+def process_sources(uploaded_files, url_text: str) -> None:
+    urls = [line.strip() for line in url_text.splitlines() if line.strip()]
+    if not uploaded_files and not urls:
+        st.warning("Upload at least one PDF or enter at least one website URL before indexing.")
         return
 
     documents = []
     errors = []
-    for uploaded_file in uploaded_files:
+    for uploaded_file in uploaded_files or []:
         try:
             documents.append(extract_text_from_pdf_file(uploaded_file, uploaded_file.name))
         except EmptyPDFError as exc:
+            errors.append(str(exc))
+    for url in urls:
+        try:
+            documents.append(extract_text_from_url(url))
+        except (EmptyPDFError, WebpageIngestionError) as exc:
             errors.append(str(exc))
 
     if errors:
@@ -136,7 +148,7 @@ def process_uploads(uploaded_files) -> None:
 
     chunks = split_documents(documents)
     if not chunks:
-        st.error("No searchable chunks were created from the uploaded PDFs.")
+        st.error("No searchable chunks were created from the provided sources.")
         return
 
     key = short_hash([doc.filename + doc.text for doc in documents])
@@ -144,7 +156,7 @@ def process_uploads(uploaded_files) -> None:
     st.session_state.chunks = chunks
     st.session_state.index_key = key
     build_index_cached(key, tuple(chunks))
-    st.success(f"Indexed {len(documents)} document(s) into {len(chunks)} chunks.")
+    st.success(f"Indexed {len(documents)} source(s) into {len(chunks)} chunks.")
 
 
 def main() -> None:
@@ -152,7 +164,7 @@ def main() -> None:
     mode, top_k, candidate_k, use_reranking = render_sidebar()
 
     st.title("Financial RAG Chatbot")
-    st.caption("Upload financial PDFs, index them locally, and ask questions grounded in retrieved document chunks.")
+    st.caption("Upload financial PDFs or add website URLs, index them locally, and ask questions grounded in retrieved chunks.")
 
     if st.session_state.documents:
         names = ", ".join(doc.filename for doc in st.session_state.documents)
@@ -160,7 +172,11 @@ def main() -> None:
         st.dataframe(
             pd.DataFrame(
                 [
-                    {"file": doc.filename, "pages": doc.page_count}
+                    {
+                        "source": doc.filename,
+                        "type": doc.metadata.get("source_type", "pdf"),
+                        "pages": doc.page_count,
+                    }
                     for doc in st.session_state.documents
                 ]
             ),
@@ -198,7 +214,7 @@ def main() -> None:
 
             with st.chat_message("assistant"):
                 if not st.session_state.chunks:
-                    response_text = "Upload and index at least one PDF before asking questions."
+                    response_text = "Upload and index at least one PDF or website URL before asking questions."
                     st.warning(response_text)
                 else:
                     index = current_index()
