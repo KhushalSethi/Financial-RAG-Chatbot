@@ -1,0 +1,2 @@
+"""Financial RAG Chatbot package."""
+
